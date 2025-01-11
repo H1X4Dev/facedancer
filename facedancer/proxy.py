@@ -303,12 +303,14 @@ class USBProxyDevice(USBBaseDevice):
         if ep_num is None:
             return
 
+        buffer_size = self.proxied_device.get_ep_max_packet_size(ep_num)
+        
         try:
             # Quick hack to improve responsiveness on interrupt endpoints.
             if endpoint.interval:
-                data = self.proxied_device.read(ep_num, endpoint.max_packet_size, timeout=endpoint.interval)
+                data = self.proxied_device.read(ep_num, buffer_size, timeout=endpoint.interval)
             else:
-                data = self.proxied_device.read(ep_num, endpoint.max_packet_size)
+                data = self.proxied_device.read(ep_num, buffer_size)
 
         except usb1.USBErrorPipe:
             self.proxied_device.clear_halt(ep_num, USBDirection.IN)
@@ -426,6 +428,19 @@ class LibUSB1Device:
     def device_speed(cls):
         return DeviceSpeed(cls.device_handle.getDevice().getDeviceSpeed())
 
+    @classmethod
+    def get_ep_max_packet_size(cls, ep_num):
+        device = cls.device_handle.getDevice()
+        if device is None:
+            return 64
+
+        for config in device.iterConfigurations():
+            for interface in config.iterInterfaces():
+                for setting in interface.iterSettings():
+                    for endpoint in setting.iterEndpoints():
+                        if (endpoint.getAddress() & 0x7F) == ep_num:
+                            return endpoint.getMaxPacketSize()
+        return 64
 
     @classmethod
     def controlRead(cls, request_type, request, value, index, length, timeout=1000):
